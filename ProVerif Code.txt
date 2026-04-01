@@ -1,0 +1,135 @@
+free comm_channel:channel.
+free current_time:bitstring.
+free time_threshold:bitstring.
+free time_delta:bitstring.
+fun hash_func(bitstring): bitstring.
+fun concat_func(bitstring, bitstring): bitstring.
+fun xor_func(bitstring, bitstring): bitstring.
+equation forall x:bitstring, y:bitstring; xor_func(xor_func(x,y),y) = x.
+fun point_mult(bitstring, bitstring): bitstring.
+fun make_pair(bitstring, bitstring): bitstring.
+reduc forall x:bitstring, y:bitstring; get_first(make_pair(x,y)) = x.
+reduc forall x:bitstring, y:bitstring; get_second(make_pair(x,y)) = y.
+free master_key:bitstring [private].
+free ac2p_pk:bitstring.
+free dri_pk:bitstring.
+free drj_pk:bitstring.
+free sys_time:bitstring.
+free reg_nonce1:bitstring [private].
+free reg_nonce2:bitstring [private].
+table creds_dri(bitstring, bitstring, bitstring, bitstring).
+table creds_drj(bitstring, bitstring, bitstring, bitstring).
+query attacker(master_key).
+query inj-event(DRi_authEvent) ==> inj-event(AC2P_authEvent).
+event DRi_authEvent.
+event AC2P_authEvent.
+event endSession(bitstring).
+let DRi_reg =
+  new dri_id:bitstring;
+  new local_nonce1:bitstring;
+  let hash_data1 = hash_func(concat_func(dri_id, local_nonce1)) in
+  out(comm_channel, (hash_data1, dri_id));
+  in(comm_channel, (cred_q1:bitstring, pseudonym1:bitstring, secret_val1:bitstring));
+  insert creds_dri(dri_id, cred_q1, pseudonym1, secret_val1);
+  0.
+let DRj_reg =
+  new drj_id:bitstring;
+  new local_nonce2:bitstring;
+  let hash_data2 = hash_func(concat_func(drj_id, local_nonce2)) in
+  out(comm_channel, (drj_id, hash_data2));
+  in(comm_channel, (cred_q2:bitstring, pseudonym2:bitstring, secret_val2:bitstring));
+  insert creds_drj(drj_id, cred_q2, pseudonym2, secret_val2);
+  0.
+let AC2P_reg =
+  in(comm_channel, (hash_data1:bitstring, dri_id:bitstring));
+  let cred_q1 = xor_func(ac2p_pk, hash_func(concat_func(concat_func(dri_id, reg_nonce1), master_key))) in
+  let pseudonym1 = hash_func(concat_func(concat_func(dri_id, cred_q1), sys_time)) in
+  let secret_val1 = hash_func(concat_func(concat_func(concat_func(ac2p_pk, cred_q1), pseudonym1), dri_id)) in
+  out(comm_channel, (cred_q1, pseudonym1, secret_val1));
+  in(comm_channel, (drj_id:bitstring, hash_data2:bitstring));
+  let cred_q2 = xor_func(ac2p_pk, hash_func(concat_func(concat_func(drj_id, reg_nonce2), master_key))) in
+  let pseudonym2 = hash_func(concat_func(concat_func(drj_id, cred_q2), sys_time)) in
+  let secret_val2 = hash_func(concat_func(concat_func(concat_func(ac2p_pk, cred_q2), pseudonym2), drj_id)) in
+  out(comm_channel, (cred_q2, pseudonym2, secret_val2));
+  0.
+let DRi_auth =
+  get creds_dri(dri_id:bitstring, cred_q1:bitstring, pseudonym1:bitstring, secret_val1:bitstring) in
+  new timestamp_1:bitstring;
+  new auth_nonce1:bitstring;
+  let msg1 = hash_func(xor_func(secret_val1, dri_pk)) in
+  let point_a = point_mult(auth_nonce1, ac2p_pk) in
+  let point_b = point_mult(auth_nonce1, point_a) in
+  let msg4 = xor_func(make_pair(make_pair(pseudonym1, msg1), timestamp_1), make_pair(point_b, secret_val1)) in
+  out(comm_channel, (point_b, msg4, timestamp_1));
+  in(comm_channel, (msg5:bitstring, msg6:bitstring, timestamp_2:bitstring));
+  let time_check1 = hash_func(concat_func(timestamp_2, current_time)) in
+  if time_check1 = time_delta then (
+    let expected_msg5 = hash_func(concat_func(concat_func(pseudonym1, dri_id), timestamp_1)) in
+    let expected_msg6 = hash_func(concat_func(ac2p_pk, timestamp_1)) in
+    if (msg5 = expected_msg5) && (msg6 = expected_msg6) then (
+      event DRi_authEvent;
+      new final_nonce1:bitstring;
+      let point_c = point_mult(final_nonce1, dri_pk) in
+      let point_d = point_mult(final_nonce1, point_c) in
+      let session_key1 = hash_func(concat_func(concat_func(secret_val1, point_b), point_d)) in
+      event endSession(session_key1);
+      0
+    ) else 0
+  ) else 0.
+let DRj_auth =
+  get creds_drj(drj_id:bitstring, cred_q2:bitstring, pseudonym2:bitstring, secret_val2:bitstring) in
+  in(comm_channel, (received_point_b:bitstring, msg5:bitstring, msg6:bitstring, timestamp_2:bitstring));
+  let time_check2 = hash_func(concat_func(timestamp_2, current_time)) in
+  if time_check2 = time_delta then (
+    let expected_msg5 = hash_func(concat_func(concat_func(pseudonym2, drj_id), timestamp_2)) in
+    if msg5 = expected_msg5 then (
+      new auth_nonce2:bitstring;
+      new timestamp_3:bitstring;
+      let point_e = point_mult(auth_nonce2, ac2p_pk) in
+      let point_f = point_mult(auth_nonce2, point_e) in
+      let session_key2 = hash_func(concat_func(concat_func(secret_val2, received_point_b), point_f)) in
+      let msg7 = hash_func(concat_func(concat_func(concat_func(pseudonym2, drj_id), drj_pk), timestamp_3)) in
+      let msg8 = hash_func(concat_func(concat_func(drj_pk, auth_nonce2), timestamp_3)) in
+      out(comm_channel, (msg7, msg8, timestamp_3));
+      event endSession(session_key2);
+      0
+    ) else 0
+  ) else 0.
+let AC2P_auth =
+  in(comm_channel, (point_b:bitstring, msg4:bitstring, timestamp_1:bitstring));
+  let time_check3 = hash_func(concat_func(timestamp_1, current_time)) in
+  if time_check3 = time_delta then (
+    get creds_dri(dri_id:bitstring, cred_q1:bitstring, pseudonym1:bitstring, secret_val1:bitstring) in
+    let expected_msg1 = hash_func(xor_func(secret_val1, dri_pk)) in
+    let temp_pair = xor_func(msg4, make_pair(point_b, secret_val1)) in
+    let extracted_data = get_first(temp_pair) in
+    let extracted_timestamp = get_second(temp_pair) in
+    let extracted_pseudonym = get_first(extracted_data) in
+    let extracted_msg1 = get_second(extracted_data) in
+    if (extracted_pseudonym = pseudonym1) && (extracted_msg1 = expected_msg1) && (extracted_timestamp = timestamp_1) then (
+      (* Generate response for DRi *)
+      let msg5 = hash_func(concat_func(concat_func(pseudonym1, dri_id), timestamp_1)) in
+      let msg6 = hash_func(concat_func(ac2p_pk, timestamp_1)) in
+      out(comm_channel, (msg5, msg6, timestamp_1));
+      event AC2P_authEvent;
+      out(comm_channel, (point_b, msg5, msg6, timestamp_1));
+      in(comm_channel, (msg7:bitstring, msg8:bitstring, timestamp_3:bitstring));
+      let time_check4 = hash_func(concat_func(timestamp_3, current_time)) in
+      if time_check4 = time_delta then (
+        get creds_drj(drj_id:bitstring, cred_q2:bitstring, pseudonym2:bitstring, secret_val2:bitstring) in
+        let msg9 = hash_func(concat_func(concat_func(pseudonym1, pseudonym2), timestamp_3)) in
+        let msg10 = hash_func(concat_func(ac2p_pk, timestamp_3)) in
+        out(comm_channel, (msg9, msg10, timestamp_3));
+        0
+      ) else 0
+    ) else 0
+  ) else 0.
+process
+  ( 
+    (!DRi_reg) | 
+    (!DRj_reg) | 
+    (!AC2P_reg) |
+    (!DRi_auth) | 
+    (!DRj_auth) | 
+    (!AC2P_auth) 
+  )

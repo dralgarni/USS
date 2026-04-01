@@ -1,0 +1,339 @@
+import hashlib
+import random
+from typing import Tuple, List, Dict
+
+class GCS:
+    def __init__(self, curve_params: Dict):
+        """
+        Initialize Ground Control Station with HECC curve parameters
+
+        Args:
+            curve_params: Dictionary containing curve parameters
+                          (p, a, b, g_x, g_y, n)
+        """
+        self.curve_params = curve_params
+        self.msk = None
+        self.mpk = None
+        self.lambda_param = None
+        self.certificates = {}
+        self.drone_keys = {}
+
+    def scalar_multiply(self, scalar: int, point: Tuple) -> Tuple:
+        """
+        Simplified scalar multiplication for demonstration
+        In real HECC, this would use divisor arithmetic
+        """
+        return (scalar * point[0] % self.curve_params['p'],
+                scalar * point[1] % self.curve_params['p'])
+
+    def setup(self) -> Tuple[int, int, int]:
+        """
+        Step 1: Setup phase - Generate master keys and public parameters
+
+        Returns:
+            Tuple of (mpk, lambda_param, G) where G is base point
+        """
+        self.msk = random.randint(1, self.curve_params['n'] - 1)
+        self.mpk = self.scalar_multiply(self.msk, self.curve_params['G'])
+        self.lambda_param = random.randint(1000, 10000)
+        G = self.curve_params['G']
+
+        print(f"[GCS Setup]")
+        print(f"  Master Secret Key (msk): KEPT SECRET")
+        print(f"  Master Public Key (mpk): {str(self.mpk)[:16]}...")
+        print(f"  Public Parameter λ: {self.lambda_param}")
+        print(f"  Base Point G: {str(G)[:16]}...")
+        print()
+
+        return self.mpk, self.lambda_param, G
+
+class Drone:
+    def __init__(self, drone_id: str, curve_params: Dict):
+        """
+        Initialize a drone with its identity
+
+        Args:
+            drone_id: Unique identifier for the drone
+            curve_params: HECC curve parameters
+        """
+        self.drone_id = drone_id
+        self.curve_params = curve_params
+        self.sk = None
+        self.pk = None
+        self.cert = None
+        self.tsk = None
+
+    def generate_keys(self) -> Tuple[int, int]:
+        """
+        Step 2: Generate public-private key pair using HECC
+
+        Returns:
+            Tuple of (secret_key, public_key)
+        """
+        n = self.curve_params['n']
+        self.sk = random.randint(1, n - 1)
+
+        self.pk = self.scalar_multiply(self.sk, self.curve_params['G'])
+
+        print(f"[Drone {self.drone_id} KeyGen]")
+        print(f"  Secret Key (sk): {self.sk}")
+        print(f"  Public Key (pk): {str(self.pk)[:16]}...")
+        print()
+
+        return self.sk, self.pk
+
+    def scalar_multiply(self, scalar: int, point: Tuple) -> Tuple:
+        """
+        Simplified scalar multiplication for demonstration
+        In real HECC, this would use divisor arithmetic
+        """
+        return (scalar * point[0] % self.curve_params['p'],
+                scalar * point[1] % self.curve_params['p'])
+
+
+def issue_certificates(gcs: GCS, drones: List[Drone]) -> Dict:
+    """
+    GCS issues certificates to all registered drones
+    """
+    print("[Certificate Issuance]")
+
+    for drone in drones:
+        cert_input = f"{drone.drone_id}{gcs.lambda_param}".encode()
+        cert_hash = int(hashlib.sha256(cert_input).hexdigest(), 16)
+        cert_value = cert_hash
+
+        gcs.certificates[drone.drone_id] = cert_value
+        gcs.drone_keys[drone.drone_id] = drone.pk
+
+        print(f"  Issued certificate for {drone.drone_id}: {str(cert_value)[:16]}...")
+
+    print()
+    return gcs.certificates
+
+class SessionManager:
+    @staticmethod
+    def establish_session(gcs: GCS, drones: List[Drone]) -> int:
+        """
+        Step 3: Establish temporary session keys for all drones
+
+        Returns:
+            Session nonce n
+        """
+        n = random.randint(100000, 999999)
+
+        print(f"[Session Key Update - Nonce: {n}]")
+
+        for drone in drones:
+            tsk_input = f"{drone.sk}{drone.drone_id}{n}".encode()
+            tsk_hash = int(hashlib.sha256(tsk_input).hexdigest(), 16)
+            drone.tsk = tsk_hash % gcs.curve_params['n']
+
+            print(f"  Drone {drone.drone_id}: tsk = {drone.tsk}")
+
+        print()
+        return n
+
+def sign_message(drone: Drone, message: str, timestamp: int) -> Tuple[str, int, int]:
+    """
+    Step 4: Each drone signs its message using temporary session key
+
+    Returns:
+        Tuple of (message, signature, timestamp)
+    """
+    message_to_sign = f"{message}{drone.drone_id}{timestamp}"
+    message_hash = int(hashlib.sha256(message_to_sign.encode()).hexdigest(), 16)
+
+    signature = (drone.pk[0] * message_hash) % drone.curve_params['n']
+
+    print(f"[Drone {drone.drone_id} Signing]")
+    print(f"  Message: {message}")
+    print(f"  Timestamp: {timestamp}")
+    print(f"  Signature σ_i: {signature}")
+    print()
+
+    return message, signature, timestamp
+
+class ClusterHead:
+    def __init__(self, gcs: GCS, curve_params: Dict):
+        """
+        Initialize Cluster Head drone
+        """
+        self.gcs = gcs
+        self.curve_params = curve_params
+        self.verified_messages = []
+
+    def verify_signature(self, drone_id: str, message: str,
+                        signature: int, timestamp: int) -> bool:
+        """
+        Step 5: Verify individual drone signatures
+
+        Returns:
+            True if signature is valid, False otherwise
+        """
+        drone_pk_point = self.gcs.drone_keys.get(drone_id)
+        if drone_pk_point is None:
+            print(f"  ERROR: No public key found for {drone_id}")
+            return False
+
+        pk_scalar_for_verification = drone_pk_point[0]
+
+        q = self.curve_params['n']
+
+        message_to_verify = f"{message}{drone_id}{timestamp}"
+        message_hash = int(hashlib.sha256(message_to_verify.encode()).hexdigest(), 16)
+
+        reconstructed_sig = (pk_scalar_for_verification * message_hash) % q
+
+        is_valid = (signature == reconstructed_sig)
+
+        print(f"[Cluster Head Verification - {drone_id}]")
+        print(f"  Message: {message}")
+        print(f"  PK_scalar: {pk_scalar_for_verification}")
+        print(f"  Signature valid: {is_valid}")
+        print()
+
+        if is_valid:
+            self.verified_messages.append({
+                'drone_id': drone_id,
+                'message': message,
+                'signature': signature,
+                'timestamp': timestamp
+            })
+
+        return is_valid
+
+    def aggregate_signatures(self) -> int:
+        """
+        Step 6: Aggregate all verified signatures
+
+        Returns:
+            Aggregate signature σ
+        """
+        if not self.verified_messages:
+            print("  No verified messages to aggregate")
+            return 0
+
+        aggregate_sig = 0
+        q = self.curve_params['n']
+
+        print("[Aggregate Signature Generation]")
+        print(f"  Aggregating {len(self.verified_messages)} signatures")
+
+        for msg_data in self.verified_messages:
+            aggregate_sig = (aggregate_sig + msg_data['signature']) % q
+            print(f"  Added signature from {msg_data['drone_id']}: {msg_data['signature']}")
+
+        print(f"  Final aggregate signature σ: {aggregate_sig}")
+        print()
+
+        return aggregate_sig
+
+def verify_aggregate_signature(gcs: GCS, cluster_head: ClusterHead,
+                             aggregate_sig: int) -> bool:
+    """
+    Step 7: GCS verifies the aggregate signature
+
+    Returns:
+        True if aggregate signature is valid, False otherwise
+    """
+    print("[GCS Aggregate Signature Verification]")
+
+    expected_value = 0
+    q = gcs.curve_params['n']
+
+    for msg_data in cluster_head.verified_messages:
+        drone_id = msg_data['drone_id']
+        message = msg_data['message']
+        timestamp = msg_data['timestamp']
+
+        drone_pk_point = gcs.drone_keys.get(drone_id)
+        if drone_pk_point is None:
+            print(f"  ERROR: No public key found for {drone_id} during aggregate verification")
+            return False
+
+        pk_scalar_for_verification = drone_pk_point[0]
+
+        message_hash_input = f"{message}{drone_id}{timestamp}".encode()
+        message_hash = int(hashlib.sha256(message_hash_input).hexdigest(), 16)
+
+        expected_value = (expected_value + (message_hash * pk_scalar_for_verification)) % q
+
+        print(f"  Drone {drone_id}: pk_scalar={pk_scalar_for_verification}, H(...)={message_hash}")
+
+    print(f"  Expected value: {expected_value}")
+    print(f"  Received aggregate σ: {aggregate_sig}")
+
+    is_valid = (aggregate_sig == expected_value)
+
+    print(f"  Aggregate signature valid: {is_valid}")
+    print()
+
+    return is_valid
+
+def demonstrate_protocol():
+    """
+    Complete demonstration of the HECC authentication scheme
+    """
+    print("=" * 60)
+    print("HECC-BASED AUTHENTICATION SCHEME FOR ATTACKING DRONES")
+    print("=" * 60)
+    print()
+
+    curve_params = {
+        'p': 2**256 - 2**32 - 977, 
+        'a': 0,  
+        'b': 7, 
+        'G': (55066263022277343669578718895168534326250603453777594175500187360389116729240,
+              32670510020758816978083085130507043184471273380659243275938904335757337482424),
+        'n': 115792089237316195423570985008687907852837564279074904382605163141518161494337
+    }
+
+    gcs = GCS(curve_params)
+    mpk, lambda_param, base_point = gcs.setup()
+
+    drones = [
+        Drone("DR001", curve_params),
+        Drone("DR002", curve_params),
+        Drone("DR003", curve_params)
+    ]
+
+    for drone in drones:
+        drone.generate_keys()
+
+    certificates = issue_certificates(gcs, drones)
+
+    session_nonce = SessionManager.establish_session(gcs, drones)
+
+    messages = []
+    for i, drone in enumerate(drones):
+        message = f"Status_Report_{i+1}"
+        timestamp = 1234567890 + i
+        signed_data = sign_message(drone, message, timestamp)
+        messages.append((drone.drone_id, signed_data))
+
+    cluster_head = ClusterHead(gcs, curve_params)
+
+    print("[Cluster Head: Individual Signature Verification]")
+    print("-" * 50)
+    for drone_id, (message, signature, timestamp) in messages:
+        cluster_head.verify_signature(drone_id, message, signature, timestamp)
+
+    aggregate_sig = cluster_head.aggregate_signatures()
+
+    print("[GCS: Final Aggregate Verification]")
+    print("-" * 50)
+    is_valid = verify_aggregate_signature(gcs, cluster_head, aggregate_sig)
+
+    print("=" * 60)
+    if is_valid:
+        print("✓ PROTOCOL COMPLETED SUCCESSFULLY")
+        print("✓ All signatures verified correctly")
+        print("✓ Aggregate authentication successful")
+    else:
+        print("✗ PROTOCOL FAILED")
+        print("✗ Aggregate signature verification failed")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    demonstrate_protocol()

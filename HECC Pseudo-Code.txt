@@ -1,0 +1,20 @@
+======================================================
+          HECC-BASED AUTHENTICATION SCHEME
+======================================================
+1) Setup Phase GCS: '
+     Master Secret Key (msk), Master Public Key (mpk),
+     Public Parameter λ, and Base Point G
+2) Drone:
+     Secret Key (sk), and Public Key (pk)
+3) Certificate Issuance: 
+     Issued certificate for Drone
+4) Key Update:
+     Nonce, and tsk
+5) Drone Signing:
+     Message, Status_Report, Timestamp, Signature σ_i
+6) Cluster Head Signature Verification and Generation
+     Message, Status_Report_1, PK_scalar, signature validity, 
+     Added signature from Drone, final aggregate signature σ
+7) GCS Final Aggregate Verification
+     Drone pk_scalar, Expected value, Received aggregate σ,
+     Aggregate signature validity

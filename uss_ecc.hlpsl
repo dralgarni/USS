@@ -1,0 +1,128 @@
+%% ===========================================================================
+%% HLPSL model of the ECC-based RQ authentication protocol (Section 3.1)
+%% "A Protocol Suite for Unmanned Security System", ICT Express (revised)
+%%
+%% Roles : dri (reconnaissance drone DR_i), gcs (ground control station),
+%%         drj (drone DR_j)
+%% Channel: Dolev-Yao (dy) for all authentication-phase messages.
+%% Abstractions (standard in AVISPA models of ECC protocols):
+%%   - scalar multiplication a.P is modelled by the uninterpreted function Mul
+%%   - the XOR masking of M4 is modelled as symmetric encryption under SVd1,
+%%     which gives the intruder no more power than the concrete XOR mask
+%%   - timestamps are modelled as fresh nonces
+%%   - M5/M7 (GCS<->DR_j) and M9 (GCS->DR_i) are modelled as hashes keyed
+%%     with the registration secrets SVd2 / SVd1, which is how each receiver
+%%     checks freshness and origin in Section 3.1
+%% Run:  avispa uss_ecc.hlpsl --ofmc     and     avispa uss_ecc.hlpsl --cl-atse
+%% ===========================================================================
+
+role dri (DRi, GCS, DRj : agent,
+          SVd1           : symmetric_key,
+          PK             : text,
+          H, Mul         : hash_func,
+          PIDd1          : text,
+          SND, RCV       : channel(dy))
+played_by DRi
+def=
+  local State : nat,
+        R2, T1, T4 : text,
+        M1, M3     : message,
+        M10        : message
+  init  State := 0
+  transition
+  1. State = 0 /\ RCV(start) =|>
+     State':= 2 /\ R2' := new() /\ T1' := new()
+                /\ M1' := H(xor(SVd1,PK).T1')
+                /\ M3' := Mul(R2'.Mul(R2'.PK))
+                /\ SND(M3'.{PIDd1.M1'.T1'}_SVd1.T1')
+                /\ secret(R2', sec_r2, {DRi})
+                /\ witness(DRi, GCS, gcs_dri_t1, T1')
+  2. State = 2 /\ RCV(H(SVd1.PIDd1.PK.T4').M10'.T4') =|>
+     State':= 4 /\ request(DRi, GCS, dri_gcs_t4, T4')
+end role
+
+role gcs (DRi, GCS, DRj : agent,
+          SVd1, SVd2     : symmetric_key,
+          PK             : text,
+          R, D           : text,
+          H, Mul         : hash_func,
+          PIDd1, PIDd2, IDm : text,
+          SND, RCV       : channel(dy))
+played_by GCS
+def=
+  local State : nat,
+        T1, T2, T3, T4 : text,
+        M1, M3, M8 : message
+  init  State := 1
+  transition
+  1. State = 1 /\ RCV(M3'.{PIDd1.M1'.T1'}_SVd1.T1') =|>
+     State':= 3 /\ T2' := new()
+                /\ SND(H(SVd2.PIDd2.PK.T2').H(PK.R.IDm.T2').T2')
+                /\ witness(GCS, DRj, drj_gcs_t2, T2')
+                /\ request(GCS, DRi, gcs_dri_t1, T1')
+  2. State = 3 /\ RCV(H(PIDd2.SVd2.PK.T3').M8'.T3') =|>
+     State':= 5 /\ T4' := new()
+                /\ SND(H(SVd1.PIDd1.PK.T4').H(PK.R.IDm.T4').T4')
+                /\ witness(GCS, DRi, dri_gcs_t4, T4')
+                /\ request(GCS, DRj, gcs_drj_t3, T3')
+                /\ secret(D, sec_d, {GCS})
+end role
+
+role drj (DRi, GCS, DRj : agent,
+          SVd2           : symmetric_key,
+          PK             : text,
+          H, Mul         : hash_func,
+          PIDd2          : text,
+          SND, RCV       : channel(dy))
+played_by DRj
+def=
+  local State : nat,
+        R3, T2, T3 : text,
+        M6         : message,
+        SKj        : message
+  init  State := 0
+  transition
+  1. State = 0 /\ RCV(H(SVd2.PIDd2.PK.T2').M6'.T2') =|>
+     State':= 2 /\ R3' := new() /\ T3' := new()
+                /\ SKj' := H(SVd2.Mul(R3'.PK).T2')
+                /\ SND(H(PIDd2.SVd2.PK.T3').H(PK.R3'.PIDd2.T3').T3')
+                /\ secret(SKj', sec_sk, {DRj, GCS})
+                /\ witness(DRj, GCS, gcs_drj_t3, T3')
+                /\ request(DRj, GCS, drj_gcs_t2, T2')
+end role
+
+role session (DRi, GCS, DRj : agent,
+              SVd1, SVd2 : symmetric_key,
+              PK, R, D, PIDd1, PIDd2, IDm : text,
+              H, Mul : hash_func)
+def=
+  local S1, R1, S2, R2, S3, R3 : channel(dy)
+  composition
+     dri(DRi, GCS, DRj, SVd1, PK, H, Mul, PIDd1, S1, R1)
+  /\ gcs(DRi, GCS, DRj, SVd1, SVd2, PK, R, D, H, Mul, PIDd1, PIDd2, IDm, S2, R2)
+  /\ drj(DRi, GCS, DRj, SVd2, PK, H, Mul, PIDd2, S3, R3)
+end role
+
+role environment()
+def=
+  const dri1, gcs1, drj1 : agent,
+        svd1, svd2, svi  : symmetric_key,
+        pk, r, d, pidd1, pidd2, idm, pidi : text,
+        h, mul : hash_func,
+        sec_r2, sec_d, sec_sk,
+        gcs_dri_t1, dri_gcs_t4, drj_gcs_t2, gcs_drj_t3 : protocol_id
+  intruder_knowledge = {dri1, gcs1, drj1, pk, h, mul, idm, pidi, svi}
+  composition
+     session(dri1, gcs1, drj1, svd1, svd2, pk, r, d, pidd1, pidd2, idm, h, mul)
+  /\ session(dri1, gcs1, drj1, svd1, svd2, pk, r, d, pidd1, pidd2, idm, h, mul)
+end role
+
+goal
+  secrecy_of sec_r2, sec_d, sec_sk
+  authentication_on gcs_dri_t1
+  authentication_on dri_gcs_t4
+  authentication_on drj_gcs_t2
+  authentication_on gcs_drj_t3
+end goal
+
+environment()

@@ -1,0 +1,120 @@
+{
+  "ecc_gcs_ms": 1.5638,
+  "ecc_drone_ms": 1.7306,
+  "ecc_total_ms": 3.2944,
+  "ecc_drone_mobile_ms": 9.344999999999999,
+  "hecc_total_ms": 9.809000000000001,
+  "ecc_messages_bits": {
+    "M_A (DR_i->GCS)": 448,
+    "M_B (GCS->DR_j)": 544,
+    "M_C (DR_j->GCS)": 544,
+    "M_D (GCS->DR_i)": 544
+  },
+  "ecc_comm_bits": 2080,
+  "hecc_comm_bits": 720,
+  "ecc_energy_mJ": 35.904,
+  "hecc_energy_mJ": 106.73280000000001,
+  "comparison": {
+    "Won et al. [8]": {
+      "comp_ms": 87.75,
+      "comm_bits": 3232,
+      "comp_reduction_pct": 96.2,
+      "comm_reduction_pct": 35.6
+    },
+    "Wazid et al. [9]": {
+      "comp_ms": 27.02,
+      "comm_bits": 1696,
+      "comp_reduction_pct": 87.8,
+      "comm_reduction_pct": -22.6
+    },
+    "Cho et al. [10]": {
+      "comp_ms": 84.27,
+      "comm_bits": 5240,
+      "comp_reduction_pct": 96.1,
+      "comm_reduction_pct": 60.3
+    },
+    "Wang et al. [11]": {
+      "comp_ms": 17.51,
+      "comm_bits": 4056,
+      "comp_reduction_pct": 81.2,
+      "comm_reduction_pct": 48.7
+    },
+    "Chen et al. [12]": {
+      "comp_ms": 9.06,
+      "comm_bits": 5536,
+      "comp_reduction_pct": 63.6,
+      "comm_reduction_pct": 62.4
+    },
+    "Jan et al. [14]": {
+      "comp_ms": 29.87,
+      "comm_bits": 3604,
+      "comp_reduction_pct": 89.0,
+      "comm_reduction_pct": 42.3
+    },
+    "ML-KEM-512+ML-DSA-44": {
+      "comp_ms": 2.0,
+      "comm_bits": 102656,
+      "comp_reduction_pct": -65.0,
+      "comm_reduction_pct": 98.0
+    }
+  },
+  "scalability": [
+    {
+      "N": 1,
+      "individual_ms": 1.496,
+      "aggregate_ms": 1.496,
+      "time_saving_pct": 0.0,
+      "sig_bits_individual": 160,
+      "sig_bits_aggregate": 160
+    },
+    {
+      "N": 5,
+      "individual_ms": 7.48,
+      "aggregate_ms": 5.567,
+      "time_saving_pct": 25.6,
+      "sig_bits_individual": 800,
+      "sig_bits_aggregate": 160
+    },
+    {
+      "N": 10,
+      "individual_ms": 14.96,
+      "aggregate_ms": 10.656,
+      "time_saving_pct": 28.8,
+      "sig_bits_individual": 1600,
+      "sig_bits_aggregate": 160
+    },
+    {
+      "N": 20,
+      "individual_ms": 29.92,
+      "aggregate_ms": 20.834,
+      "time_saving_pct": 30.4,
+      "sig_bits_individual": 3200,
+      "sig_bits_aggregate": 160
+    },
+    {
+      "N": 50,
+      "individual_ms": 74.8,
+      "aggregate_ms": 51.368,
+      "time_saving_pct": 31.3,
+      "sig_bits_individual": 8000,
+      "sig_bits_aggregate": 160
+    },
+    {
+      "N": 100,
+      "individual_ms": 149.6,
+      "aggregate_ms": 102.258,
+      "time_saving_pct": 31.6,
+      "sig_bits_individual": 16000,
+      "sig_bits_aggregate": 160
+    },
+    {
+      "N": 200,
+      "individual_ms": 299.2,
+      "aggregate_ms": 204.038,
+      "time_saving_pct": 31.8,
+      "sig_bits_individual": 32000,
+      "sig_bits_aggregate": 160
+    }
+  ],
+  "gcs_sessions_per_s": 639.467962655071
+}
